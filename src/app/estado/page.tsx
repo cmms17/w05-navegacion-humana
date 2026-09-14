@@ -11,6 +11,18 @@ export const dynamic = "force-dynamic";
 
 type Props = { searchParams: Promise<{ folio?: string }> };
 
+// Confusión encontrada en la prueba de persona (w05, persona "Rosa"): si
+// escribe el folio sin el guion o con espacios (ej. "nav 1234" en vez de
+// "NAV-1234", algo muy normal para alguien que no está acostumbrada a
+// escribir códigos), la búsqueda fallaba en silencio y ella se iba pensando
+// que había perdido su resultado. Esta función normaliza lo que la persona
+// escribe para que el guion y las mayúsculas no sean su responsabilidad.
+function normalizarFolio(entrada: string): string {
+  const limpio = entrada.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const match = limpio.match(/^NAV(\d{4})$/);
+  return match ? `NAV-${match[1]}` : entrada.trim().toUpperCase();
+}
+
 // Consulta pública por folio — sin cuenta, sin necesidad de smartphone ni
 // internet en casa (Condición 4 del Blueprint: accesible por diseño). El
 // folio es literalmente el mismo tipo de papelito que ya entregan las
@@ -28,7 +40,7 @@ export default async function Estado({ searchParams }: Props) {
     const { data: t } = await supabase
       .from("tamizajes")
       .select("*")
-      .eq("folio", folio.trim().toUpperCase())
+      .eq("folio", normalizarFolio(folio))
       .maybeSingle<Tamizaje>();
 
     if (!t) {
@@ -77,6 +89,11 @@ export default async function Estado({ searchParams }: Props) {
           Buscar
         </button>
       </form>
+      <p className="mt-2 text-xs text-slate-400">
+        Escríbelo como te lo dieron en la farmacia, por ejemplo NAV-1234 — si
+        se te olvida el guion o pones espacios, no hay problema, igual lo
+        encontramos.
+      </p>
 
       {noEncontrado ? (
         <p className="mt-6 text-sm text-red-600">
