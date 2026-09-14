@@ -26,8 +26,21 @@ export default function Tamizaje() {
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
-    setEnviando(true);
     setError(null);
+
+    // Bug encontrado en prueba mecánica (w05): se podía capturar presión
+    // diastólica mayor o igual a la sistólica — una combinación que no existe
+    // fisiológicamente — y el sistema la aceptaba como si fuera una lectura
+    // real. Lo atajamos aquí antes de llamar a la API, y el servidor también
+    // lo rechaza por su cuenta (nunca hay que confiar solo en el navegador).
+    if (Number(sistolica) <= Number(diastolica)) {
+      setError(
+        "La presión sistólica debe ser mayor que la diastólica — revisa las cifras capturadas en la farmacia."
+      );
+      return;
+    }
+
+    setEnviando(true);
     try {
       const res = await fetch("/api/tamizaje", {
         method: "POST",

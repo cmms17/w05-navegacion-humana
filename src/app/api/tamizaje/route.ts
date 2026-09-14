@@ -5,23 +5,44 @@ import { calcularRiesgo, generarFolio } from "@/lib/riesgo";
 import { generarChecklistSimulado } from "@/lib/llm";
 import { SLA_HORAS } from "@/lib/tipos";
 
-const cuerpoEsperado = z.object({
-  nombre: z.string().min(1).max(120),
-  edad: z.number().int().min(0).max(120).nullable().optional(),
-  sistolica: z.number().int().min(60).max(260),
-  diastolica: z.number().int().min(30).max(160),
-  glucosaMgdl: z.number().int().min(40).max(500),
-  mareosFrecuentes: z.boolean(),
-  sedExcesiva: z.boolean(),
-  antecedentesFamiliares: z.boolean(),
-});
+// Único punto de entrada que crea un tamizaje. Valida la señal estructurada
+// (cifras de farmacia), calcula el riesgo, y — condición 1 del Blueprint —
+// si el riesgo es medio o alto, SIEMPRE crea un caso de navegación: ningún
+// tamizaje se queda solo con un número.
+const cuerpoEsperado = z
+  .object({
+    nombre: z.string().min(1).max(120),
+    edad: z.number().int().min(0).max(120).nullable().optional(),
+    sistolica: z.number().int().min(60).max(260),
+    diastolica: z.number().int().min(30).max(160),
+    glucosaMgdl: z.number().int().min(40).max(500),
+    mareosFrecuentes: z.boolean(),
+    sedExcesiva: z.boolean(),
+    antecedentesFamiliares: z.boolean(),
+  })
+  // Bug encontrado en prueba mecánica (w05): el esquema aceptaba presión
+  // arterial invertida (diastólica >= sistólica), algo que no existe
+  // fisiológicamente, y aun así el sistema la clasificaba como riesgo real.
+  // Como ADVERSARY, esto es exactamente el tipo de dato falso que no debe
+  // pasar disfrazado de señal médica real.
+  .refine((datos) => datos.sistolica > datos.diastolica, {
+    message: "presion_invertida",
+    path: ["sistolica"],
+  });
 
 export async function POST(request: Request) {
   const cuerpo = await request.json().catch(() => null);
   const resultado = cuerpoEsperado.safeParse(cuerpo);
   if (!resultado.success) {
+    const esPresionInvertida = resultado.error.issues.some(
+      (i) => i.message === "presion_invertida"
+    );
     return NextResponse.json(
-      { error: "Datos de tamizaje inválidos." },
+      {
+        error: esPresionInvertida
+          ? "La presión sistólica debe ser mayor que la diastólica — revisa las cifras capturadas en la farmacia."
+          : "Datos de tamizaje inválidos.",
+      },
       { status: 400 }
     );
   }
